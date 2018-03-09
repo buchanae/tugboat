@@ -1,99 +1,115 @@
 package docker
 
-// DockerCommand is responsible for configuring and running a docker container.
-type DockerCommand struct {
-	Image           string
-	Command         []string
-	Volumes         []Volume
-	Workdir         string
-	ContainerName   string
-	RemoveContainer bool
-	Env             map[string]string
-	Stdin           io.Reader
-	Stdout          io.Writer
-	Stderr          io.Writer
-	Event           *events.ExecutorWriter
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	tug "github.com/buchanae/tugboat"
+	"os/exec"
+	"strings"
+	"time"
+)
+
+type Docker struct {
+	tug.Logger
+	tug.Storage
+	LeaveContainer bool
 }
 
-// Run runs the Docker command and blocks until done.
-func (dcmd DockerCommand) Run() error {
-	// (Hopefully) temporary hack to sync docker API version info.
-	// Don't need the client here, just the logic inside NewDockerClient().
-	_, derr := dockerutil.NewDockerClient()
-	if derr != nil {
-		dcmd.Event.Error("Can't connect to Docker", derr)
-		return derr
-	}
+func (d *Docker) Exec(ctx context.Context, task *tug.Task, stdio *tug.Stdio) error {
 
-	pullcmd := exec.Command("docker", "pull", dcmd.Image)
-	pullcmd.Run()
+	err := exec.Command("docker", "pull", task.ContainerImage).Run()
+	if err != nil {
+		return fmt.Errorf(`failed to pull container image "%s": %s`, task.ContainerImage, err)
+	}
 
 	args := []string{"run", "-i", "--read-only"}
 
-	if dcmd.RemoveContainer {
+	if !d.LeaveContainer {
 		args = append(args, "--rm")
 	}
 
-	if dcmd.Env != nil {
-		for k, v := range dcmd.Env {
-			args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+	for k, v := range task.Env {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	name := fmt.Sprintf("task-%s-%s", task.ID, randString(5))
+	args = append(args, "--name", name)
+
+	for _, input := range task.Inputs {
+		hostPath, err := d.Storage.Map(input.Path)
+		if err != nil {
+			return fmt.Errorf("failed to map host path for input volume: %s", err)
 		}
-	}
-
-	if dcmd.ContainerName != "" {
-		args = append(args, "--name", dcmd.ContainerName)
-	}
-
-	if dcmd.Workdir != "" {
-		args = append(args, "-w", dcmd.Workdir)
-	}
-
-	for _, vol := range dcmd.Volumes {
-		arg := formatVolumeArg(vol)
+		arg := formatVolumeArg(hostPath, input.Path, true)
 		args = append(args, "-v", arg)
 	}
 
-	args = append(args, dcmd.Image)
-	args = append(args, dcmd.Command...)
+	for _, vol := range task.Volumes {
+		hostPath, err := d.Storage.Map(vol)
+		if err != nil {
+			return fmt.Errorf("failed to map host path for volume: %s", err)
+		}
+		arg := formatVolumeArg(hostPath, vol, false)
+		args = append(args, "-v", arg)
+	}
+
+	args = append(args, task.ContainerImage)
+	args = append(args, task.Command...)
 
 	// Roughly: `docker run --rm -i --read-only -w [workdir] -v [bindings] [imageName] [cmd]`
-	dcmd.Event.Info("Running command", "cmd", "docker "+strings.Join(args, " "))
+	d.Meta("command", "docker "+strings.Join(args, " "))
+	d.Meta("container name", name)
+
 	cmd := exec.Command("docker", args...)
 
-	if dcmd.Stdin != nil {
-		cmd.Stdin = dcmd.Stdin
+	cmd.Stdin = stdio.Stdin
+	cmd.Stdout = stdio.Stdout
+	cmd.Stderr = stdio.Stderr
+
+	err = cmd.Start()
+	if err != nil {
+		return fmt.Errorf(`exec "docker run" failed: %s`, err)
 	}
-	if dcmd.Stdout != nil {
-		cmd.Stdout = dcmd.Stdout
-	}
-	if dcmd.Stderr != nil {
-		cmd.Stderr = dcmd.Stderr
-	}
-	return cmd.Run()
+
+	cmdctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Kill the container when the context is canceled,
+	// instead of expecting the os/exec signal to work.
+	go func() {
+		<-cmdctx.Done()
+		exec.Command("docker", "stop", "-t", "10", name).Run()
+		exec.Command("docker", "kill", name).Run()
+	}()
+
+	// Inspect the container for metadata
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		cmd := exec.CommandContext(cmdctx, "docker", "inspect", name)
+		for i := 0; i < 5; i++ {
+			select {
+			case <-cmdctx.Done():
+				return
+			case <-ticker.C:
+				out, err := cmd.Output()
+				if err == nil {
+					meta := ContainerMetadata{}
+					err := json.Unmarshal(out, &meta)
+					if err == nil {
+						d.Meta("container ID", meta.Id)
+						d.Meta("container image hash", meta.Image)
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	return cmd.Wait()
 }
 
-// Stop stops the container.
-func (dcmd DockerCommand) Stop() error {
-	dcmd.Event.Info("Stopping container", "container", dcmd.ContainerName)
-	dclient, derr := dockerutil.NewDockerClient()
-	if derr != nil {
-		return derr
-	}
-	// close the docker client connection
-	defer dclient.Close()
-	// Set timeout
-	timeout := time.Second * 10
-	// Issue stop call
-	// TODO is context.Background right?
-	err := dclient.ContainerStop(context.Background(), dcmd.ContainerName, &timeout)
-	return err
-}
-
-func formatVolumeArg(v Volume) string {
-	// `o` is structed as "HostPath:ContainerPath:Mode".
-	mode := "rw"
-	if v.Readonly {
-		mode = "ro"
-	}
-	return fmt.Sprintf("%s:%s:%s", v.HostPath, v.ContainerPath, mode)
+type ContainerMetadata struct {
+	Id    string
+	Image string
 }

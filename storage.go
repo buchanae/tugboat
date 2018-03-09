@@ -8,6 +8,7 @@ type Storage interface {
 	Validate(context.Context, []File) error
 	Download(context.Context, []File) error
 	Upload(context.Context, []File) error
+	Map(string) (string, error)
 }
 
 type EmptyStorage struct {

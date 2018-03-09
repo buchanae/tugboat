@@ -23,21 +23,25 @@ type Task struct {
 	Command        []string
 	Env            map[string]string
 
-	Inputs, Outputs []File
+	Volumes []string
+	Inputs,
+	// All output paths must be contained in a volume.
+	Outputs []File
 
 	Stdin, Stdout, Stderr string
 }
 
+type Executor interface {
+	Exec(context.Context, *Task, *Stdio) error
+}
+
 type EmptyExecutor struct{}
 
-func (e *EmptyExecutor) Run(ctx context.Context, task *Task, stdio *Stdio) error {
+func (e *EmptyExecutor) Exec(ctx context.Context, task *Task, stdio *Stdio) error {
 	return nil
 }
 
-func Run(ctx context.Context, task *Task) (err error) {
-	log := EmptyLogger{}
-	store := EmptyStorage{}
-	exec := EmptyExecutor{}
+func Run(ctx context.Context, task *Task, log Logger, store Storage, exec Executor) (err error) {
 
 	try, must, finish := Errors()
 	defer func() { err = finish(err) }()
@@ -81,6 +85,6 @@ func Run(ctx context.Context, task *Task) (err error) {
 		try(stdio.Close())
 	}()
 
-	must(exec.Run(ctx, task, stdio))
+	must(exec.Exec(ctx, task, stdio))
 	return
 }
