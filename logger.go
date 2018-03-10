@@ -16,10 +16,10 @@ type Logger interface {
 
 	Info(msg string, args ...interface{})
 
-	DownloadStarted(url string)
-	DownloadFinished(url string)
-	UploadStarted(url string)
-	UploadFinished(url string)
+	DownloadStarted(file File)
+	DownloadFinished(file File)
+	UploadStarted(file File)
+	UploadFinished(file File)
 
 	Running()
 
@@ -45,17 +45,17 @@ func (e EmptyLogger) Version(v Version) {
 func (e EmptyLogger) Info(msg string, args ...interface{}) {
 	fmt.Println(msg, args)
 }
-func (e EmptyLogger) DownloadStarted(url string) {
-	fmt.Println("DownloadStarted", url)
+func (e EmptyLogger) DownloadStarted(file File) {
+	fmt.Println("DownloadStarted", file)
 }
-func (e EmptyLogger) DownloadFinished(url string) {
-	fmt.Println("DownloadFinished", url)
+func (e EmptyLogger) DownloadFinished(file File) {
+	fmt.Println("DownloadFinished", file)
 }
-func (e EmptyLogger) UploadStarted(url string) {
-	fmt.Println("DownloadStarted", url)
+func (e EmptyLogger) UploadStarted(file File) {
+	fmt.Println("DownloadStarted", file)
 }
-func (e EmptyLogger) UploadFinished(url string) {
-	fmt.Println("DownloadFinished", url)
+func (e EmptyLogger) UploadFinished(file File) {
+	fmt.Println("DownloadFinished", file)
 }
 func (e EmptyLogger) Running() {
 	fmt.Println("Running")

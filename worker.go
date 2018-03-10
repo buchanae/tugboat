@@ -39,31 +39,40 @@ func Run(ctx context.Context, task *Task, stage *Stage, log Logger, store Storag
 
 	var me MultiError
 	try := me.Try
-	defer me.Finish(&err)
+	defer func() {
+		err = me.Finish()
+	}()
 
 	info := log.Info
 	d := LogHelper{log}
 	d.Start()
 	defer d.Finish()
 
-	info("validating task")
-	err = store.Validate(ctx, task.Outputs)
-	Must(err)
+	// TODO
+	//info("validating task")
+	//err = store.Validate(ctx, task.Outputs)
+	//Must(err)
 
 	info("creating staging directory")
 	staged, err := StageTask(stage, task)
 	Must(err)
 
-	defer try(staged.RemoveAll())
+	defer func() {
+		try(staged.RemoveAll())
+	}()
 
-	err = store.Download(ctx, staged.Inputs)
+	err = Download(ctx, store, log, staged.Inputs)
 	Must(err)
-	defer try(store.Upload(ctx, staged.Outputs))
+	defer func() {
+		try(Upload(ctx, staged, store, log))
+	}()
 
 	stdio, err := DefaultStdio(staged, log)
 	Must(err)
 
-	defer try(stdio.Close())
+	defer func() {
+		try(stdio.Close())
+	}()
 	defer info("cleaning up")
 
 	log.Running()

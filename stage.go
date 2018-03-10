@@ -18,6 +18,7 @@ func StageTask(parent *Stage, task *Task) (*StagedTask, error) {
 
 	// Create task-specific stage
 	st, err := NewStage(filepath.Join(parent.Dir, task.ID), parent.Mode)
+	st.LeaveDir = parent.LeaveDir
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +72,9 @@ func StageTask(parent *Stage, task *Task) (*StagedTask, error) {
 }
 
 type Stage struct {
-	Dir  string
-	Mode os.FileMode
+	Dir      string
+	Mode     os.FileMode
+	LeaveDir bool
 }
 
 func NewStage(dir string, mode os.FileMode) (*Stage, error) {
@@ -86,7 +88,7 @@ func NewStage(dir string, mode os.FileMode) (*Stage, error) {
 		return nil, wrap(err, "failed to create stage directory")
 	}
 
-	return &Stage{dir, mode}, nil
+	return &Stage{Dir: dir, Mode: mode}, nil
 }
 
 // EnsureMap calls stage.Map then EnsurePath.
@@ -135,6 +137,9 @@ func (stage *Stage) Unmap(src string) string {
 
 // RemoveAll removes the stage directory.
 func (stage *Stage) RemoveAll() error {
+	if stage.LeaveDir {
+		return nil
+	}
 	return os.RemoveAll(stage.Dir)
 }
 

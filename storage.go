@@ -2,28 +2,110 @@ package tugboat
 
 import (
 	"context"
-	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 )
 
 type Storage interface {
-	Validate(context.Context, []File) error
-	Download(context.Context, []File) error
-	Upload(context.Context, []File) error
+	Get(ctx context.Context, url, rel, abs string) error
+	Put(ctx context.Context, url, rel, abs string) error
+
+	// Determines whether this backends supports the given request (url/path/class).
+	// A backend normally uses this to match the url prefix (e.g. "s3://")
+	SupportsGet(url string) bool
+	SupportsPut(url string) bool
 }
 
-type EmptyStorage struct {
+func Download(ctx context.Context, store Storage, log Logger, inputs []File) error {
+	return nil
 }
 
-func (s *EmptyStorage) Validate(ctx context.Context, files []File) error {
-	fmt.Println("Validate", files)
-	return nil
+func Upload(ctx context.Context, stage *StagedTask, store Storage, log Logger) error {
+
+	errors := make(chan error)
+	files := make(chan *hostfile)
+	done := make(chan struct{})
+	wg := &sync.WaitGroup{}
+
+	// Start a fixed number of uploader threads.
+	numUploaders := 10
+	wg.Add(numUploaders)
+	for i := 0; i < numUploaders; i++ {
+		go func() {
+			defer wg.Done()
+
+			for file := range files {
+				log.UploadStarted(file.out)
+
+				// TODO
+				//r.fixLinks(mapper, output.Path)
+				// TODO log bytes copied
+				rel := stage.Unmap(file.path)
+				err := store.Put(ctx, file.out.URL, rel, file.path)
+				if err != nil {
+					errors <- wrap(err, "upload failed %s, %s", file.out.URL, file.path)
+				} else {
+					log.UploadFinished(file.out)
+				}
+			}
+		}()
+	}
+
+	// Collect errors
+	var me MultiError
+	go func() {
+		for err := range errors {
+			me = append(me, err)
+		}
+		close(done)
+	}()
+
+	// Walk all the outputs, sending files to the uploader channel.
+	for _, out := range stage.Outputs {
+		w := walker{out, files, errors}
+		filepath.Walk(out.Path, w.walk)
+	}
+
+	close(files)
+	wg.Wait()
+	close(errors)
+	<-done
+
+	return me.Finish()
 }
-func (s *EmptyStorage) Download(ctx context.Context, files []File) error {
-	fmt.Println("Download", files)
-	return nil
+
+type hostfile struct {
+	out File
+	// The absolute path of the file on the host.
+	path string
+	// Size of the file in bytes
+	size int64
 }
-func (s *EmptyStorage) Upload(ctx context.Context, files []File) error {
-	fmt.Println("Upload", files)
+
+type walker struct {
+	out   File
+	files chan *hostfile
+	errs  chan error
+}
+
+func (w *walker) walk(p string, f os.FileInfo, err error) error {
+	if err != nil {
+		w.errs <- err
+		// Skip this file/directory, capture the error, and continue processing.
+		return nil
+	}
+
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		w.errs <- err
+		// Skip this file/directory, capture the error, and continue processing.
+		return nil
+	}
+
+	if !f.IsDir() {
+		w.files <- &hostfile{w.out, abs, f.Size()}
+	}
 	return nil
 }
 

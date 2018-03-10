@@ -35,19 +35,9 @@ func (me *MultiError) Try(err error) {
 	}
 }
 
-func (me *MultiError) Finish(err *error) {
-
-	r := recover()
-	if r != nil {
-		if e, ok := r.(error); ok {
-			*me = append(*me, e)
-		} else {
-			e := errf("Unknown panic: %+v", r)
-			*me = append(*me, e)
-		}
+func (me MultiError) Finish() error {
+	if len(me) > 0 {
+		return me
 	}
-
-	if len(*me) > 0 {
-		*err = *me
-	}
+	return nil
 }
