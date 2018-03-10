@@ -1,6 +1,7 @@
 package tugboat
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -27,7 +28,43 @@ type Logger interface {
 }
 
 type EmptyLogger struct {
-	Logger
+}
+
+func (e EmptyLogger) StartTime(t time.Time) {
+	fmt.Println("StartTime", t)
+}
+func (e EmptyLogger) EndTime(t time.Time) {
+	fmt.Println("EndTime", t)
+}
+func (e EmptyLogger) Meta(key string, value interface{}) {
+	fmt.Println("Meta", key, value)
+}
+func (e EmptyLogger) Version(v Version) {
+	fmt.Println("Version", v)
+}
+func (e EmptyLogger) Info(msg string, args ...interface{}) {
+	fmt.Println(msg, args)
+}
+func (e EmptyLogger) DownloadStarted(url string) {
+	fmt.Println("DownloadStarted", url)
+}
+func (e EmptyLogger) DownloadFinished(url string) {
+	fmt.Println("DownloadFinished", url)
+}
+func (e EmptyLogger) UploadStarted(url string) {
+	fmt.Println("DownloadStarted", url)
+}
+func (e EmptyLogger) UploadFinished(url string) {
+	fmt.Println("DownloadFinished", url)
+}
+func (e EmptyLogger) Running() {
+	fmt.Println("Running")
+}
+func (e EmptyLogger) Stdout() io.Writer {
+	return nil
+}
+func (e EmptyLogger) Stderr() io.Writer {
+	return nil
 }
 
 type LogHelper struct {

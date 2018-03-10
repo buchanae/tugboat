@@ -6,8 +6,68 @@ import (
 	"strings"
 )
 
-func StageTask(stage *Stage, task *Task) (*Task, error) {
-	return nil, nil
+type StagedTask struct {
+	*Stage
+	*Task
+	Inputs, Outputs       []File
+	Volumes               []string
+	Stdin, Stdout, Stderr string
+}
+
+func StageTask(parent *Stage, task *Task) (*StagedTask, error) {
+
+	// Create task-specific stage
+	st, err := NewStage(filepath.Join(parent.Dir, task.ID), parent.Mode)
+	if err != nil {
+		return nil, err
+	}
+
+	stage := &StagedTask{
+		Stage: st,
+		Task:  task,
+	}
+
+	stdin, err := stage.EnsureMap(task.Stdin)
+	if err != nil {
+		return nil, wrap(err, "failed to map stdin")
+	}
+	stdout, err := stage.EnsureMap(task.Stdout)
+	if err != nil {
+		return nil, wrap(err, "failed to map stdout")
+	}
+	stderr, err := stage.EnsureMap(task.Stderr)
+	if err != nil {
+		return nil, wrap(err, "failed to map stderr")
+	}
+	stage.Stdin = stdin
+	stage.Stdout = stdout
+	stage.Stderr = stderr
+
+	for _, input := range task.Inputs {
+		path, err := stage.EnsureMap(input.Path)
+		if err != nil {
+			return nil, wrap(err, "failed to create task inputs stage directory: %s", path)
+		}
+		stage.Inputs = append(stage.Inputs, File{URL: input.URL, Path: path})
+	}
+
+	for _, output := range task.Outputs {
+		path, err := stage.EnsureMap(output.Path)
+		if err != nil {
+			return nil, wrap(err, "failed to map task outputs to stage: %s", output.Path)
+		}
+		stage.Outputs = append(stage.Outputs, File{URL: output.URL, Path: path})
+	}
+
+	for _, volume := range task.Volumes {
+		path, err := stage.EnsureMap(volume)
+		if err != nil {
+			return nil, wrap(err, "failed to map task volumes to stage: %s", path)
+		}
+		stage.Volumes = append(stage.Volumes, path)
+	}
+
+	return stage, nil
 }
 
 type Stage struct {
@@ -29,12 +89,29 @@ func NewStage(dir string, mode os.FileMode) (*Stage, error) {
 	return &Stage{dir, mode}, nil
 }
 
+// EnsureMap calls stage.Map then EnsurePath.
+func (s *Stage) EnsureMap(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+
+	mapped, err := s.Map(path)
+	if err != nil {
+		return "", err
+	}
+	return mapped, EnsurePath(mapped, s.Mode)
+}
+
 // Map maps the given path into the stage directory.
 // An error is returned if the resulting path would be outside the stage directory.
 //
 // If the stage is configured with a base dir of "/tmp/staging", then
 // stage.Map("/home/ubuntu/myfile") will return "/tmp/staging/home/ubuntu/myfile".
 func (stage *Stage) Map(src string) (string, error) {
+	if src == "" {
+		return stage.Dir, nil
+	}
+
 	p := filepath.Join(stage.Dir, src)
 	ap, err := filepath.Abs(p)
 	if err != nil {

@@ -1,36 +1,53 @@
 package tugboat
 
-type Must func(error)
-type Finish func(error) error
-type Try func(error) error
+import (
+	"fmt"
+	"strings"
+)
 
-func Errors() (Try, Must, Finish) {
+func errf(msg string, args ...interface{}) error {
+	return fmt.Errorf(msg, args...)
+}
 
-	var errors MultiError
+func wrap(err error, msg string, args ...interface{}) error {
+	return errf("%s: %s", fmt.Sprintf(msg, args...), err)
+}
 
-	finish := func(err error) error {
-		if perr := CapturePanic(); perr != nil {
-			errors = append(errors, perr)
+func Must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+type MultiError []error
+
+func (me MultiError) Error() string {
+	var strs []string
+	for _, e := range me {
+		strs = append(strs, e.Error())
+	}
+	return strings.Join(strs, "; ")
+}
+
+func (me *MultiError) Try(err error) {
+	if err != nil {
+		*me = append(*me, err)
+	}
+}
+
+func (me *MultiError) Finish(err *error) {
+
+	r := recover()
+	if r != nil {
+		if e, ok := r.(error); ok {
+			*me = append(*me, e)
+		} else {
+			e := errf("Unknown panic: %+v", r)
+			*me = append(*me, e)
 		}
-		if len(errors) > 0 {
-			return errors
-		}
-		return nil
 	}
 
-	try := func(err error) error {
-		if err != nil {
-			errors = append(errors, err)
-			return err
-		}
-		return nil
+	if len(*me) > 0 {
+		*err = *me
 	}
-
-	must := func(err error) {
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	return try, must, finish
 }

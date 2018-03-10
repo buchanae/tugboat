@@ -32,19 +32,14 @@ type Task struct {
 }
 
 type Executor interface {
-	Exec(context.Context, *Task, *Stdio) error
+	Exec(context.Context, *StagedTask, *Stdio) error
 }
 
-type EmptyExecutor struct{}
+func Run(ctx context.Context, task *Task, stage *Stage, log Logger, store Storage, exec Executor) (err error) {
 
-func (e *EmptyExecutor) Exec(ctx context.Context, task *Task, stdio *Stdio) error {
-	return nil
-}
-
-func Run(ctx context.Context, task *Task, log Logger, store Storage, exec Executor) (err error) {
-
-	try, must, finish := Errors()
-	defer func() { err = finish(err) }()
+	var me MultiError
+	try := me.Try
+	defer me.Finish(&err)
 
 	info := log.Info
 	d := LogHelper{log}
@@ -52,39 +47,27 @@ func Run(ctx context.Context, task *Task, log Logger, store Storage, exec Execut
 	defer d.Finish()
 
 	info("validating task")
-	must(store.Validate(ctx, task.Outputs))
+	err = store.Validate(ctx, task.Outputs)
+	Must(err)
 
 	info("creating staging directory")
-	stage, err := NewStage("foo", 0755)
-	must(err)
-
 	staged, err := StageTask(stage, task)
-	must(err)
+	Must(err)
 
-	defer func() {
-		info("cleaning up staging directory")
-		try(stage.RemoveAll())
-	}()
+	defer try(staged.RemoveAll())
 
-	info("downloading inputs")
-	must(store.Download(ctx, staged.Inputs))
+	err = store.Download(ctx, staged.Inputs)
+	Must(err)
+	defer try(store.Upload(ctx, staged.Outputs))
 
-	defer func() {
-		info("uploading outputs")
-		try(store.Upload(ctx, staged.Outputs))
-	}()
+	stdio, err := DefaultStdio(staged, log)
+	Must(err)
+
+	defer try(stdio.Close())
+	defer info("cleaning up")
 
 	log.Running()
+	Must(exec.Exec(ctx, staged, stdio))
 
-	info("opening stdio")
-	stdio, err := DefaultStdio(staged, log)
-	must(err)
-
-	defer func() {
-		info("closing stdio")
-		try(stdio.Close())
-	}()
-
-	must(exec.Exec(ctx, task, stdio))
 	return
 }

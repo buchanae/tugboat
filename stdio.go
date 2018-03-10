@@ -31,8 +31,8 @@ func (s *Stdio) Close() error {
 	return nil
 }
 
-func DefaultStdio(task *Task, log Logger) (*Stdio, error) {
-	stdio, err := TaskStdio(task)
+func DefaultStdio(t *StagedTask, log Logger) (*Stdio, error) {
+	stdio, err := NewStdio(t.Stdin, t.Stdout, t.Stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -40,30 +40,30 @@ func DefaultStdio(task *Task, log Logger) (*Stdio, error) {
 	return stdio, nil
 }
 
-func TaskStdio(task *Task) (*Stdio, error) {
+func NewStdio(stdin, stdout, stderr string) (*Stdio, error) {
 	stdio := &Stdio{
 		Stdout: ioutil.Discard,
 		Stderr: ioutil.Discard,
 	}
 
-	if task.Stdin != "" {
-		s, err := os.Open(task.Stdin)
+	if stdin != "" {
+		s, err := os.Open(stdin)
 		if err != nil {
 			return nil, wrap(err, "failed to open stdin file")
 		}
 		stdio.Stdin = s
 	}
 
-	if task.Stdout != "" {
-		s, err := os.Create(task.Stdout)
+	if stdout != "" {
+		s, err := os.Create(stdout)
 		if err != nil {
 			return nil, wrap(err, "failed to create stdout file")
 		}
 		stdio.Stdout = s
 	}
 
-	if task.Stderr != "" {
-		s, err := os.Create(task.Stderr)
+	if stderr != "" {
+		s, err := os.Create(stderr)
 		if err != nil {
 			return nil, wrap(err, "failed to create stderr file")
 		}

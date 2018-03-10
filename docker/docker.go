@@ -12,15 +12,14 @@ import (
 
 type Docker struct {
 	tug.Logger
-	tug.Storage
 	LeaveContainer bool
 }
 
-func (d *Docker) Exec(ctx context.Context, task *tug.Task, stdio *tug.Stdio) error {
+func (d *Docker) Exec(ctx context.Context, task *tug.StagedTask, stdio *tug.Stdio) error {
 
-	err := exec.Command("docker", "pull", task.ContainerImage).Run()
-	if err != nil {
-		return fmt.Errorf(`failed to pull container image "%s": %s`, task.ContainerImage, err)
+	pullErr := exec.Command("docker", "pull", task.ContainerImage).Run()
+	if pullErr != nil {
+		d.Info(`failed to pull container image "%s": %s`, task.ContainerImage, pullErr)
 	}
 
 	args := []string{"run", "-i", "--read-only"}
@@ -36,21 +35,16 @@ func (d *Docker) Exec(ctx context.Context, task *tug.Task, stdio *tug.Stdio) err
 	name := fmt.Sprintf("task-%s-%s", task.ID, randString(5))
 	args = append(args, "--name", name)
 
-	for _, input := range task.Inputs {
-		hostPath, err := d.Storage.Map(input.Path)
-		if err != nil {
-			return fmt.Errorf("failed to map host path for input volume: %s", err)
-		}
-		arg := formatVolumeArg(hostPath, input.Path, true)
+	for i, input := range task.Inputs {
+		host := input.Path
+		container := task.Task.Inputs[i].Path
+		arg := formatVolumeArg(host, container, true)
 		args = append(args, "-v", arg)
 	}
 
-	for _, vol := range task.Volumes {
-		hostPath, err := d.Storage.Map(vol)
-		if err != nil {
-			return fmt.Errorf("failed to map host path for volume: %s", err)
-		}
-		arg := formatVolumeArg(hostPath, vol, false)
+	for i, host := range task.Volumes {
+		container := task.Task.Volumes[i]
+		arg := formatVolumeArg(host, container, false)
 		args = append(args, "-v", arg)
 	}
 
@@ -66,6 +60,8 @@ func (d *Docker) Exec(ctx context.Context, task *tug.Task, stdio *tug.Stdio) err
 	cmd.Stdin = stdio.Stdin
 	cmd.Stdout = stdio.Stdout
 	cmd.Stderr = stdio.Stderr
+
+	var err error
 
 	err = cmd.Start()
 	if err != nil {

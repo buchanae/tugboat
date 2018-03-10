@@ -2,17 +2,29 @@ package tugboat
 
 import (
 	"context"
+	"fmt"
 )
 
 type Storage interface {
 	Validate(context.Context, []File) error
 	Download(context.Context, []File) error
 	Upload(context.Context, []File) error
-	Map(string) (string, error)
 }
 
 type EmptyStorage struct {
-	Storage
+}
+
+func (s *EmptyStorage) Validate(ctx context.Context, files []File) error {
+	fmt.Println("Validate", files)
+	return nil
+}
+func (s *EmptyStorage) Download(ctx context.Context, files []File) error {
+	fmt.Println("Download", files)
+	return nil
+}
+func (s *EmptyStorage) Upload(ctx context.Context, files []File) error {
+	fmt.Println("Upload", files)
+	return nil
 }
 
 /*
