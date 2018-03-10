@@ -61,10 +61,10 @@ func (e EmptyLogger) Running() {
 	fmt.Println("Running")
 }
 func (e EmptyLogger) Stdout() io.Writer {
-	return nil
+	return os.Stdout
 }
 func (e EmptyLogger) Stderr() io.Writer {
-	return nil
+	return os.Stderr
 }
 
 type LogHelper struct {

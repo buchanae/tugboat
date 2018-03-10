@@ -18,7 +18,7 @@ func NewLocal() (*Local, error) {
 }
 
 // Get copies a file from storage into the given hostPath.
-func (local *Local) Get(ctx context.Context, url, rel, host string) error {
+func (local *Local) Get(ctx context.Context, url, host string) error {
 	path := getPath(url)
   return linkFile(path, host)
 }

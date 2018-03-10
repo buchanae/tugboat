@@ -54,21 +54,30 @@ func Run(ctx context.Context, task *Task, stage *Stage, log Logger, store Storag
 	//Must(err)
 
 	info("creating staging directory")
-	staged, err := StageTask(stage, task)
-	Must(err)
+	var staged *StagedTask
+	staged, err = StageTask(stage, task)
+	if err != nil {
+		return
+	}
 
 	defer func() {
 		try(staged.RemoveAll())
 	}()
 
-	err = Download(ctx, store, log, staged.Inputs)
-	Must(err)
+	err = Download(ctx, staged, store, log)
+	if err != nil {
+		return
+	}
+
 	defer func() {
 		try(Upload(ctx, staged, store, log))
 	}()
 
-	stdio, err := DefaultStdio(staged, log)
-	Must(err)
+	var stdio *Stdio
+	stdio, err = DefaultStdio(staged, log)
+	if err != nil {
+		return
+	}
 
 	defer func() {
 		try(stdio.Close())
@@ -76,7 +85,7 @@ func Run(ctx context.Context, task *Task, stage *Stage, log Logger, store Storag
 	defer info("cleaning up")
 
 	log.Running()
-	Must(exec.Exec(ctx, staged, stdio))
+	try(exec.Exec(ctx, staged, stdio))
 
 	return
 }

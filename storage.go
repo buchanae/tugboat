@@ -8,7 +8,7 @@ import (
 )
 
 type Storage interface {
-	Get(ctx context.Context, url, rel, abs string) error
+	Get(ctx context.Context, url, abs string) error
 	Put(ctx context.Context, url, rel, abs string) error
 
 	// Determines whether this backends supports the given request (url/path/class).
@@ -17,11 +17,56 @@ type Storage interface {
 	SupportsPut(url string) bool
 }
 
-func Download(ctx context.Context, store Storage, log Logger, inputs []File) error {
-	return nil
+func Download(ctx context.Context, task *StagedTask, store Storage, log Logger) error {
+
+	errors := make(chan error)
+	files := make(chan File)
+	done := make(chan struct{})
+	wg := &sync.WaitGroup{}
+
+	// Start a fixed number of downloader threads.
+	numDownloaders := 10
+	wg.Add(numDownloaders)
+	for i := 0; i < numDownloaders; i++ {
+		go func() {
+			defer wg.Done()
+
+			for file := range files {
+				log.DownloadStarted(file)
+				// TODO log bytes copied
+
+				err := store.Get(ctx, file.URL, file.Path)
+				if err != nil {
+					errors <- wrap(err, "download failed %s, %s", file.URL, file.Path)
+				} else {
+					log.DownloadFinished(file)
+				}
+			}
+		}()
+	}
+
+	// Collect errors
+	var me MultiError
+	go func() {
+		for err := range errors {
+			me = append(me, err)
+		}
+		close(done)
+	}()
+
+	for _, input := range task.Inputs {
+		files <- input
+	}
+	close(files)
+
+	wg.Wait()
+	close(errors)
+	<-done
+
+	return me.Finish()
 }
 
-func Upload(ctx context.Context, stage *StagedTask, store Storage, log Logger) error {
+func Upload(ctx context.Context, task *StagedTask, store Storage, log Logger) error {
 
 	errors := make(chan error)
 	files := make(chan *hostfile)
@@ -41,7 +86,7 @@ func Upload(ctx context.Context, stage *StagedTask, store Storage, log Logger) e
 				// TODO
 				//r.fixLinks(mapper, output.Path)
 				// TODO log bytes copied
-				rel := stage.Unmap(file.path)
+				rel := task.Unmap(file.path)
 				err := store.Put(ctx, file.out.URL, rel, file.path)
 				if err != nil {
 					errors <- wrap(err, "upload failed %s, %s", file.out.URL, file.path)
@@ -62,7 +107,7 @@ func Upload(ctx context.Context, stage *StagedTask, store Storage, log Logger) e
 	}()
 
 	// Walk all the outputs, sending files to the uploader channel.
-	for _, out := range stage.Outputs {
+	for _, out := range task.Outputs {
 		w := walker{out, files, errors}
 		filepath.Walk(out.Path, w.walk)
 	}
@@ -121,77 +166,4 @@ func validateOutputs(mapper *FileMapper) error {
 	return nil
 }
 
-
-	// Download inputs
-	downloadErrs := make(util.MultiError, len(mapper.Inputs))
-	downloadCtx, cancelDownloadCtx := context.WithCancel(ctx)
-	defer cancelDownloadCtx()
-
-	wg := &sync.WaitGroup{}
-
-  for i, input := range mapper.Inputs {
-    wg.Add(1)
-
-    go func(input *tes.Input, i int) {
-      defer wg.Done()
-
-      log.DownloadStarted(input.URL)
-
-      err := r.Store.Get(downloadCtx, input.Url, input.Path, input.Type)
-      if err != nil {
-        downloadErrs[i] = err
-        event.Error("Download failed", "url", input.Url, "error", err)
-        cancelDownloadCtx()
-      } else {
-        log.DownloadFinished(input.URL)
-      }
-
-    }(input, i)
-  }
-
-	wg.Wait()
-	if !downloadErrs.IsNil() {
-		run.syserr = downloadErrs.ToError()
-	}
-
-	// Upload outputs
-	uploadErrs := make(util.MultiError, len(mapper.Outputs))
-	wg = &sync.WaitGroup{}
-
-  for i, output := range mapper.Outputs {
-    wg.Add(1)
-    go func(output *tes.Output, i int) {
-      defer wg.Done()
-
-      // TODO map files to URLs outside of storage.Put
-      log.UploadStarted(output.URL)
-
-      r.fixLinks(mapper, output.Path)
-
-      out, err := r.Store.Put(ctx, output.Url, output.Path, output.Type)
-      if err != nil {
-        if err == storage.ErrEmptyDirectory {
-          event.Warn("Upload finished with warning", "url", output.Url, "warning", err)
-        } else {
-          uploadErrs[i] = err
-          event.Error("Upload failed", "url", output.Url, "error", err)
-        }
-      } else {
-        log.UploadFinished(output.URL)
-      }
-      outputs[i] = out
-      return
-    }(output, i)
-  }
-
-	wg.Wait()
-
-	if !uploadErrs.IsNil() {
-		run.syserr = uploadErrs.ToError()
-	}
-
-	// unmap paths for OutputFileLog
-	for _, o := range outputLog {
-		o.Path = mapper.ContainerPath(o.Path)
-	}
 */
