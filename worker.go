@@ -23,6 +23,8 @@ type Task struct {
 	Command        []string
 	Env            map[string]string
 
+	Workdir string
+
 	Volumes []string
 	Inputs,
 	// All output paths must be contained in a volume.

@@ -32,7 +32,11 @@ func (d *Docker) Exec(ctx context.Context, task *tug.StagedTask, stdio *tug.Stdi
 	}
 
 	for k, v := range task.Env {
-		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+		args = append(args, "--env", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	if task.Workdir != "" {
+		args = append(args, "--workdir", task.Workdir)
 	}
 
 	name := fmt.Sprintf("task-%s-%s", task.ID, randString(5))
