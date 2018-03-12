@@ -86,10 +86,10 @@ func Upload(ctx context.Context, task *StagedTask, store Storage, log Logger) er
 				// TODO
 				//r.fixLinks(mapper, output.Path)
 				// TODO log bytes copied
-				rel := task.Unmap(file.path)
-				err := store.Put(ctx, file.out.URL, rel, file.path)
+
+				err := store.Put(ctx, file.out.URL, file.rel, file.path)
 				if err != nil {
-					errors <- wrap(err, "upload failed %s, %s", file.out.URL, file.path)
+					errors <- wrap(err, "uploading %q to %q", file.path, file.out.URL)
 				} else {
 					log.UploadFinished(file.out)
 				}
@@ -122,6 +122,7 @@ func Upload(ctx context.Context, task *StagedTask, store Storage, log Logger) er
 
 type hostfile struct {
 	out File
+	rel string
 	// The absolute path of the file on the host.
 	path string
 	// Size of the file in bytes
@@ -141,6 +142,13 @@ func (w *walker) walk(p string, f os.FileInfo, err error) error {
 		return nil
 	}
 
+	rel, err := filepath.Rel(w.out.Path, p)
+	if err != nil {
+		w.errs <- wrap(err, "getting relative path for %q", p)
+		// Skip this file/directory, capture the error, and continue processing.
+		return nil
+	}
+
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		w.errs <- err
@@ -149,7 +157,7 @@ func (w *walker) walk(p string, f os.FileInfo, err error) error {
 	}
 
 	if !f.IsDir() {
-		w.files <- &hostfile{w.out, abs, f.Size()}
+		w.files <- &hostfile{w.out, rel, abs, f.Size()}
 	}
 	return nil
 }

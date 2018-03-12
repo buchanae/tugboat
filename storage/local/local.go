@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+  tug "github.com/buchanae/tugboat"
 )
 
 // Local provides access to a local-disk storage system.
@@ -27,6 +29,10 @@ func (local *Local) Get(ctx context.Context, url, host string) error {
 func (local *Local) Put(ctx context.Context, url, rel, host string) error {
 	path := getPath(url)
   tgt := filepath.Join(path, rel)
+  err := tug.EnsurePath(tgt, 0755)
+  if err != nil {
+    return err
+  }
 	return linkFile(host, tgt)
 }
 
@@ -61,14 +67,14 @@ func copyFile(source string, dest string) (err error) {
 	// Open source file for copying
 	sf, err := os.Open(source)
 	if err != nil {
-		return fmt.Errorf("failed to open source file for copying: %s", err)
+		return fmt.Errorf("opening source file for copying: %s", err)
 	}
 	defer sf.Close()
 
 	// Create and open dest file for writing
 	df, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY, 0775)
 	if err != nil {
-		return fmt.Errorf("failed to create dest file for copying: %s", err)
+		return fmt.Errorf("creating dest file for copying: %s", err)
 	}
 	defer func() {
 		cerr := df.Close()
@@ -87,11 +93,11 @@ func linkFile(source string, dest string) error {
 	// without this resulting link could be a symlink
 	parent, err := filepath.EvalSymlinks(source)
 	if err != nil {
-		return fmt.Errorf("failed to eval symlinks: %s", err)
+		return fmt.Errorf("eval symlinks: %s", err)
 	}
 	same, err := sameFile(parent, dest)
 	if err != nil {
-		return fmt.Errorf("failed to check if file is the same file: %s", err)
+		return fmt.Errorf("checking if file is the same file: %s", err)
 	}
 	if same {
 		return nil
@@ -100,7 +106,7 @@ func linkFile(source string, dest string) error {
 	if err != nil {
 		err = copyFile(source, dest)
 		if err != nil {
-			return fmt.Errorf("failed to copy file: %s", err)
+			return fmt.Errorf("copying file: %s", err)
 		}
 	}
 	return err
@@ -110,13 +116,13 @@ func sameFile(source string, dest string) (bool, error) {
 	var err error
 	sfi, err := os.Stat(source)
 	if err != nil {
-		return false, fmt.Errorf("failed to stat src file: %s", err)
+		return false, fmt.Errorf("stat src file: %s", err)
 	}
 	dfi, err := os.Stat(dest)
 	if os.IsNotExist(err) {
 		return false, nil
 	} else if err != nil {
-		return false, fmt.Errorf("failed to stat dest file: %s", err)
+		return false, fmt.Errorf("stat dest file: %s", err)
 	}
 	return os.SameFile(sfi, dfi), nil
 }

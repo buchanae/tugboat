@@ -14,7 +14,7 @@ type Logger interface {
 	Meta(key string, value interface{})
 	Version(Version)
 
-	Info(msg string, args ...interface{})
+	Info(args ...interface{})
 
 	DownloadStarted(file File)
 	DownloadFinished(file File)
@@ -42,8 +42,8 @@ func (e EmptyLogger) Meta(key string, value interface{}) {
 func (e EmptyLogger) Version(v Version) {
 	fmt.Println("Version", v)
 }
-func (e EmptyLogger) Info(msg string, args ...interface{}) {
-	fmt.Println(msg, args)
+func (e EmptyLogger) Info(args ...interface{}) {
+	fmt.Println(args...)
 }
 func (e EmptyLogger) DownloadStarted(file File) {
 	fmt.Println("DownloadStarted", file)
@@ -52,10 +52,10 @@ func (e EmptyLogger) DownloadFinished(file File) {
 	fmt.Println("DownloadFinished", file)
 }
 func (e EmptyLogger) UploadStarted(file File) {
-	fmt.Println("DownloadStarted", file)
+	fmt.Println("UploadStarted", file)
 }
 func (e EmptyLogger) UploadFinished(file File) {
-	fmt.Println("DownloadFinished", file)
+	fmt.Println("UploadFinished", file)
 }
 func (e EmptyLogger) Running() {
 	fmt.Println("Running")
