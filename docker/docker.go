@@ -13,13 +13,16 @@ import (
 type Docker struct {
 	tug.Logger
 	LeaveContainer bool
+	NoPull         bool
 }
 
 func (d *Docker) Exec(ctx context.Context, task *tug.StagedTask, stdio *tug.Stdio) error {
 
-	pullErr := exec.Command("docker", "pull", task.ContainerImage).Run()
-	if pullErr != nil {
-		d.Info(`failed to pull container image "%s": %s`, task.ContainerImage, pullErr)
+	if !d.NoPull {
+		pullErr := exec.Command("docker", "pull", task.ContainerImage).Run()
+		if pullErr != nil {
+			d.Info(`failed to pull container image "%s": %s`, task.ContainerImage, pullErr)
+		}
 	}
 
 	args := []string{"run", "-i", "--read-only"}
