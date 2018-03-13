@@ -58,6 +58,7 @@ func Run(ctx context.Context, task *Task, stage *Stage, log Logger, store Storag
 	info("creating staging directory")
 	var staged *StagedTask
 	staged, err = StageTask(stage, task)
+	try(err)
 	if err != nil {
 		return
 	}
@@ -67,6 +68,7 @@ func Run(ctx context.Context, task *Task, stage *Stage, log Logger, store Storag
 	}()
 
 	err = Download(ctx, staged, store, log)
+	try(err)
 	if err != nil {
 		return
 	}
@@ -77,6 +79,7 @@ func Run(ctx context.Context, task *Task, stage *Stage, log Logger, store Storag
 
 	var stdio *Stdio
 	stdio, err = DefaultStdio(staged, log)
+	try(err)
 	if err != nil {
 		return
 	}
